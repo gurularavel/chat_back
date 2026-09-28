@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "D:\\lara\\bin\\php\\php-8.3.30-Win32-vs16-x64\\php.exe",
+            "args": [
+                "D:\\lara\\www\\chat\\backend\\artisan",
+                "boost:mcp"
+            ]
+        }
+    }
+}
