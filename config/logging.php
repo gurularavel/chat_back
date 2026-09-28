@@ -73,6 +73,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Slow HTTP requests (see LogSlowRequests middleware)
+        'performance' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/performance.log'),
+            'level' => 'info',
+            'days' => 7,
+            'replace_placeholders' => true,
+        ],
+
         'monthly' => [
             'driver' => 'monthly',
             'path' => storage_path('logs/laravel.log'),

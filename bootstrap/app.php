@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\LogSlowRequests;
 use App\Http\Middleware\RequireSuperadmin;
 use App\Http\Middleware\RequireWorkspaceAdmin;
 use App\Http\Middleware\ResolveWorkspace;
@@ -22,6 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // First, so its timing covers everything else (sessions, auth, the controller).
+        $middleware->prepend(LogSlowRequests::class);
         $middleware->statefulApi();
         $middleware->api(append: [SetLocale::class]);
 

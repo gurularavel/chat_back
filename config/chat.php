@@ -12,6 +12,9 @@ return [
     // low | medium | high | xhigh | max. Short support answers are fastest at "low".
     'ai_effort' => env('AI_EFFORT', 'low'),
 
+    // Requests slower than this are written to storage/logs/performance-*.log (0 = log every request).
+    'slow_request_ms' => (int) env('SLOW_REQUEST_MS', 1000),
+
     // All embeddings are stored with this many dimensions (pgvector column size).
     'embedding_dimensions' => 1536,
 
