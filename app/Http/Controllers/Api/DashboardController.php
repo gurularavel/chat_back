@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\ConversationStatus;
 use App\Enums\SenderType;
 use App\Http\Controllers\Controller;
 use App\Models\AiUsageLog;
@@ -10,6 +11,7 @@ use App\Models\Message;
 use App\Services\Billing\PlanLimits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
@@ -54,7 +56,51 @@ class DashboardController extends Controller
                 ->orderByDesc('total')
                 ->limit(5)
                 ->get(),
+            'first_response' => $this->firstResponse($since),
+            'sla' => $limits->hasFeature($workspace, 'sla') ? $this->sla($since) + ['target_minutes' => $workspace->sla_first_response_minutes] : null,
             'limits' => $limits->usage($workspace),
         ]);
+    }
+
+    /** Average and median wait from handoff to the first operator reply. */
+    private function firstResponse(Carbon $since): array
+    {
+        $row = Conversation::where('handoff_at', '>=', $since)
+            ->whereNotNull('first_response_at')
+            ->selectRaw('count(*) as total, avg(extract(epoch from first_response_at - handoff_at)) as avg_seconds, percentile_cont(0.5) within group (order by extract(epoch from first_response_at - handoff_at)) as median_seconds')
+            ->first();
+
+        return [
+            'responded' => (int) $row->total,
+            'avg_seconds' => $row->avg_seconds === null ? null : (int) round($row->avg_seconds),
+            'median_seconds' => $row->median_seconds === null ? null : (int) round($row->median_seconds),
+        ];
+    }
+
+    /**
+     * Handoffs with a deadline that are decided: answered, or past due without an answer.
+     * Chats still inside their window are not counted yet.
+     */
+    private function sla(Carbon $since): array
+    {
+        $row = Conversation::where('handoff_at', '>=', $since)
+            ->whereNotNull('sla_due_at')
+            ->where(fn ($q) => $q->whereNotNull('first_response_at')->orWhere('sla_due_at', '<=', now()))
+            ->selectRaw('count(*) as total, sum(case when first_response_at is not null and first_response_at <= sla_due_at then 1 else 0 end) as met')
+            ->first();
+
+        $total = (int) $row->total;
+        $met = (int) $row->met;
+
+        return [
+            'total' => $total,
+            'met' => $met,
+            'breached' => $total - $met,
+            'rate' => $total ? round($met / $total * 100, 1) : null,
+            'waiting_breached' => Conversation::whereIn('status', [ConversationStatus::PendingHuman, ConversationStatus::Human])
+                ->whereNotNull('sla_breached_at')
+                ->whereNull('first_response_at')
+                ->count(),
+        ];
     }
 }

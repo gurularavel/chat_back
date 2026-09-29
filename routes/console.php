@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('billing:renew')->hourly()->withoutOverlapping();
 Schedule::command('billing:remind')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('sla:check')->everyMinute()->withoutOverlapping();
 
 // Operators whose browser stopped sending heartbeats are marked offline.
 Schedule::call(function () {

@@ -10,14 +10,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['name', 'slug', 'owner_id', 'locale', 'timezone', 'billing_name', 'billing_email', 'billing_tax_id', 'billing_address', 'status', 'trial_ends_at'])]
+#[Fillable(['name', 'slug', 'owner_id', 'locale', 'timezone', 'sla_first_response_minutes', 'billing_name', 'billing_email', 'billing_tax_id', 'billing_address', 'status', 'trial_ends_at'])]
 class Workspace extends Model
 {
     use HasFactory;
 
     protected function casts(): array
     {
-        return ['trial_ends_at' => 'datetime'];
+        return ['trial_ends_at' => 'datetime', 'sla_first_response_minutes' => 'integer'];
     }
 
     public function owner(): BelongsTo

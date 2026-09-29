@@ -75,9 +75,18 @@ class ConversationService
 
     public function addOperatorMessage(Conversation $conversation, User $operator, string $body): Message
     {
+        // The first reply after a handoff stops the SLA clock.
+        $firstResponse = $conversation->awaitsFirstResponse();
+        if ($firstResponse) {
+            $conversation->forceFill(['first_response_at' => now()]);
+        }
+
         // Replying takes over the conversation from the AI.
         if ($conversation->status !== ConversationStatus::Human || $conversation->assigned_user_id !== $operator->id) {
             $this->claim($conversation, $operator);
+        } elseif ($firstResponse) {
+            $conversation->save();
+            $this->broadcastUpdate($conversation);
         }
 
         return $this->store($conversation, SenderType::Operator, $body, $operator->id);
@@ -121,12 +130,14 @@ class ConversationService
     /** Operator hands the chat back to the AI assistant. */
     public function returnToAi(Conversation $conversation): void
     {
+        $this->stopSlaClock($conversation);
         $conversation->update(['status' => ConversationStatus::Ai, 'assigned_user_id' => null]);
         $this->broadcastUpdate($conversation);
     }
 
     public function close(Conversation $conversation): void
     {
+        $this->stopSlaClock($conversation);
         $conversation->update(['status' => ConversationStatus::Closed, 'closed_at' => now()]);
         $this->broadcastUpdate($conversation);
     }
@@ -139,6 +150,7 @@ class ConversationService
     {
         $operator = $this->assigner->pick($conversation->workspace_id, $conversation->department_id);
 
+        $this->startSlaClock($conversation);
         $conversation->update([
             'status' => ConversationStatus::PendingHuman,
             'was_handed_off' => true,
@@ -175,8 +187,48 @@ class ConversationService
             : $this->assigner->anyOnline($conversation->workspace_id, $conversation->department_id);
 
         if (! $operatorAvailable) {
+            $this->stopSlaClock($conversation);
             $conversation->update(['status' => ConversationStatus::Ai, 'assigned_user_id' => null]);
             $this->broadcastUpdate($conversation);
+        }
+    }
+
+    /** Called by the SLA sweep once the first-response deadline has passed. */
+    public function markSlaBreached(Conversation $conversation): void
+    {
+        $conversation->forceFill(['sla_breached_at' => now()])->save();
+        $this->realtime(new ConversationUpdated($conversation));
+    }
+
+    /**
+     * A handoff starts the wait for a human. A repeated handoff while the visitor is
+     * still waiting keeps the original clock; a later handoff starts a new one.
+     */
+    private function startSlaClock(Conversation $conversation): void
+    {
+        $waiting = in_array($conversation->status, [ConversationStatus::PendingHuman, ConversationStatus::Human], true);
+        if ($waiting && $conversation->awaitsFirstResponse()) {
+            return;
+        }
+
+        $minutes = $this->limits->slaMinutes(Workspace::findOrFail($conversation->workspace_id));
+
+        $conversation->forceFill([
+            'handoff_at' => now(),
+            'first_response_at' => null,
+            'sla_due_at' => $minutes ? now()->addMinutes($minutes) : null,
+            'sla_breached_at' => null,
+        ]);
+    }
+
+    /**
+     * The wait ended without an operator reply (back to the AI, or closed). An unbreached
+     * clock is dropped so it counts neither as met nor as missed; a breach stays on record.
+     */
+    private function stopSlaClock(Conversation $conversation): void
+    {
+        if ($conversation->awaitsFirstResponse() && ! $conversation->sla_breached_at) {
+            $conversation->forceFill(['handoff_at' => null, 'sla_due_at' => null]);
         }
     }
 

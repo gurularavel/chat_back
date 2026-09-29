@@ -40,6 +40,19 @@ class PlanLimits
         return true;
     }
 
+    public function hasFeature(Workspace $workspace, string $feature): bool
+    {
+        return in_array($feature, $this->subscription($workspace)?->plan?->features ?? [], true);
+    }
+
+    /** First-response target in minutes; null when the plan has no SLA or the workspace set no target. */
+    public function slaMinutes(Workspace $workspace): ?int
+    {
+        return $workspace->sla_first_response_minutes && $this->hasFeature($workspace, 'sla')
+            ? $workspace->sla_first_response_minutes
+            : null;
+    }
+
     public function usedSeats(Workspace $workspace): int
     {
         $members = $workspace->members()->count();

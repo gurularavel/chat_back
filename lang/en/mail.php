@@ -47,4 +47,13 @@ return [
         'view' => 'View invoice',
         'footer' => 'Questions? Just reply to this email.',
     ],
+    'sla' => [
+        'subject' => 'SLA missed: chat #:id is waiting for an operator',
+        'intro' => 'A visitor in :workspace was handed to a human and got no reply within the :minutes-minute target.',
+        'visitor' => 'Visitor',
+        'department' => 'Department',
+        'waiting' => 'Waiting',
+        'minutes' => ':waiting min',
+        'action' => 'Open the chat',
+    ],
 ];

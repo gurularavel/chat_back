@@ -47,4 +47,13 @@ return [
         'view' => 'Fakturaya baxın',
         'footer' => 'Sualınız varsa, bu məktuba cavab yazın.',
     ],
+    'sla' => [
+        'subject' => 'SLA pozuldu: #:id söhbəti operator gözləyir',
+        'intro' => ':workspace hesabında operatora ötürülən ziyarətçi :minutes dəqiqəlik hədəf ərzində cavab almayıb.',
+        'visitor' => 'Ziyarətçi',
+        'department' => 'Şöbə',
+        'waiting' => 'Gözləmə',
+        'minutes' => ':waiting dəq',
+        'action' => 'Söhbəti aç',
+    ],
 ];

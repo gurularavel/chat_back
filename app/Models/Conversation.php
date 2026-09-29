@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['workspace_id', 'widget_id', 'visitor_id', 'department_id', 'assigned_user_id', 'status', 'channel', 'locale', 'was_handed_off', 'rating', 'last_message_at', 'closed_at'])]
+#[Fillable(['workspace_id', 'widget_id', 'visitor_id', 'department_id', 'assigned_user_id', 'status', 'channel', 'locale', 'was_handed_off', 'handoff_at', 'first_response_at', 'sla_due_at', 'sla_breached_at', 'rating', 'last_message_at', 'closed_at'])]
 class Conversation extends Model
 {
     use BelongsToWorkspace;
@@ -20,6 +20,10 @@ class Conversation extends Model
         return [
             'status' => ConversationStatus::class,
             'was_handed_off' => 'boolean',
+            'handoff_at' => 'datetime',
+            'first_response_at' => 'datetime',
+            'sla_due_at' => 'datetime',
+            'sla_breached_at' => 'datetime',
             'last_message_at' => 'datetime',
             'closed_at' => 'datetime',
         ];
@@ -58,5 +62,11 @@ class Conversation extends Model
     public function isOpen(): bool
     {
         return $this->status !== ConversationStatus::Closed;
+    }
+
+    /** A handed-off visitor is still waiting for the first operator reply. */
+    public function awaitsFirstResponse(): bool
+    {
+        return $this->handoff_at !== null && $this->first_response_at === null;
     }
 }

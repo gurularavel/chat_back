@@ -47,6 +47,8 @@ class MeController extends Controller
                 'slug' => $current->slug,
                 'locale' => $current->locale,
                 'timezone' => $current->timezone,
+                'sla_first_response_minutes' => $current->sla_first_response_minutes,
+                'sla_available' => $limits->hasFeature($current, 'sla'),
                 'status' => $current->status,
                 'role' => $current->pivot->role->value,
                 'service_active' => $limits->isServiceActive($current),

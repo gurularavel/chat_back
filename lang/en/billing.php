@@ -17,4 +17,5 @@ return [
     'workspace_suspended' => 'This workspace is suspended. Please contact support.',
     'invoice_line' => ['month' => ':plan plan — monthly subscription', 'year' => ':plan plan — yearly subscription', 'prorated' => ':plan plan — extra seats (rest of the period)'],
     'invoice_not_payable' => 'This invoice is already paid or void.',
+    'sla_not_in_plan' => 'Response-time SLA is not included in your plan.',
 ];

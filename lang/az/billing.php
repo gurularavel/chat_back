@@ -17,4 +17,5 @@ return [
     'workspace_suspended' => 'Bu hesab dayandırılıb. Dəstək ilə əlaqə saxlayın.',
     'invoice_line' => ['month' => ':plan paketi — aylıq abunə', 'year' => ':plan paketi — illik abunə', 'prorated' => ':plan paketi — əlavə yerlər (dövrün qalan günləri)'],
     'invoice_not_payable' => 'Bu faktura artıq ödənilib və ya ləğv edilib.',
+    'sla_not_in_plan' => 'Cavab müddəti SLA-sı planınıza daxil deyil.',
 ];
