@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\Plan;
 use App\Models\Subscription;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\Gateways\GatewayResult;
 use App\Services\Billing\Gateways\PaymentGateway;
@@ -34,19 +35,22 @@ class BillingService
     /**
      * Start paying for a plan (first payment, or switching plan). Returns the hosted page URL.
      */
-    public function checkout(Workspace $workspace, Plan $plan, int $seats, string $returnUrl): string
+    public function checkout(Workspace $workspace, Plan $plan, int $seats, string $interval, string $returnUrl): string
     {
         $this->validateSeats($workspace, $plan, $seats);
+        if (! in_array($interval, $plan->intervals(), true)) {
+            throw ValidationException::withMessages(['interval' => __('billing.interval_unavailable')]);
+        }
 
         $payment = Payment::create([
             'workspace_id' => $workspace->id,
             'subscription_id' => $this->limits->subscription($workspace)?->id,
             'gateway' => $this->gateway->name(),
-            'amount' => $plan->priceFor($seats),
+            'amount' => $plan->priceFor($seats, $interval),
             'currency' => $plan->currency,
             'status' => PaymentStatus::Pending,
             'type' => PaymentType::Initial,
-            'payload' => ['plan_id' => $plan->id, 'seats' => $seats],
+            'payload' => ['plan_id' => $plan->id, 'seats' => $seats, 'interval' => $interval],
         ]);
 
         $order = $this->gateway->createOrder(
@@ -95,7 +99,7 @@ class BillingService
             'currency' => $subscription->plan->currency,
             'status' => PaymentStatus::Pending,
             'type' => PaymentType::SeatUpgrade,
-            'payload' => ['plan_id' => $subscription->plan_id, 'seats' => $seats, 'previous_seats' => $subscription->seats],
+            'payload' => ['plan_id' => $subscription->plan_id, 'seats' => $seats, 'interval' => $subscription->interval, 'previous_seats' => $subscription->seats],
         ]);
         $description = sprintf('%s — +%d seat', config('app.name'), $seats - $subscription->seats);
 
@@ -147,17 +151,25 @@ class BillingService
             return;
         }
 
+        // A plan given for free is never charged; the customer buys one to continue.
+        if ($subscription->is_complimentary) {
+            $subscription->update(['status' => SubscriptionStatus::Expired]);
+            AuditLog::record('subscription.grant_expired', $subscription, workspaceId: $subscription->workspace_id);
+
+            return;
+        }
+
         $seats = $subscription->pending_seats ?? $subscription->seats;
         $invoice = $this->invoices->issueRenewal($subscription);
         $payment = Payment::create([
             'workspace_id' => $subscription->workspace_id,
             'subscription_id' => $subscription->id,
             'gateway' => $this->gateway->name(),
-            'amount' => $subscription->plan->priceFor($seats),
+            'amount' => $subscription->plan->priceFor($seats, $subscription->interval),
             'currency' => $subscription->plan->currency,
             'status' => PaymentStatus::Pending,
             'type' => PaymentType::Renewal,
-            'payload' => ['plan_id' => $subscription->plan_id, 'seats' => $seats, 'invoice_id' => $invoice?->id],
+            'payload' => ['plan_id' => $subscription->plan_id, 'seats' => $seats, 'interval' => $subscription->interval, 'invoice_id' => $invoice?->id],
         ]);
 
         $result = $subscription->paymentMethod
@@ -196,7 +208,12 @@ class BillingService
             'currency' => $invoice->currency,
             'status' => PaymentStatus::Pending,
             'type' => PaymentType::Renewal,
-            'payload' => ['plan_id' => $subscription->plan_id, 'seats' => (int) ($invoice->lines[0]['seats'] ?? $subscription->seats), 'invoice_id' => $invoice->id],
+            'payload' => [
+                'plan_id' => $subscription->plan_id,
+                'seats' => (int) ($invoice->lines[0]['seats'] ?? $subscription->seats),
+                'interval' => $subscription->interval,
+                'invoice_id' => $invoice->id,
+            ],
         ]);
 
         $order = $this->gateway->createOrder(
@@ -208,6 +225,57 @@ class BillingService
         $payment->update(['gateway_order_id' => $order->orderId, 'raw' => $order->raw]);
 
         return $order->redirectUrl;
+    }
+
+    /**
+     * Superadmin gives a plan without payment, starting now for the given number of periods.
+     * Replaces whatever the workspace had; recorded as a zero "grant" payment so it shows
+     * up in the payments list, and the subscription is flagged as complimentary.
+     */
+    public function grant(Workspace $workspace, Plan $plan, int $seats, string $interval, int $periods, User $admin): Subscription
+    {
+        return DB::transaction(function () use ($workspace, $plan, $seats, $interval, $periods, $admin) {
+            $subscription = Subscription::withoutGlobalScopes()->firstOrNew(['workspace_id' => $workspace->id]);
+            if ($subscription->exists) {
+                $this->invoices->voidOpen($subscription);
+            }
+
+            $start = now();
+            $end = $start->copy();
+            for ($i = 0; $i < $periods; $i++) {
+                $end = $this->periodEnd($end, $interval);
+            }
+
+            $subscription->fill([
+                'plan_id' => $plan->id,
+                'seats' => $seats,
+                'interval' => $interval,
+                'pending_seats' => null,
+                'status' => SubscriptionStatus::Active,
+                'is_complimentary' => true,
+                'granted_by' => $admin->id,
+                'granted_at' => $start,
+                'current_period_start' => $start,
+                'current_period_end' => $end,
+                'cancel_at_period_end' => false,
+                'renewal_attempts' => 0,
+                'next_retry_at' => null,
+            ])->save();
+
+            Payment::create([
+                'workspace_id' => $workspace->id,
+                'subscription_id' => $subscription->id,
+                'gateway' => 'manual',
+                'amount' => 0,
+                'currency' => $plan->currency,
+                'status' => PaymentStatus::Paid,
+                'type' => PaymentType::Grant,
+                'payload' => ['plan_id' => $plan->id, 'seats' => $seats, 'interval' => $interval, 'periods' => $periods, 'granted_by' => $admin->id],
+                'paid_at' => $start,
+            ]);
+
+            return $subscription;
+        });
     }
 
     public function cancel(Subscription $subscription): void
@@ -267,7 +335,7 @@ class BillingService
         $total = max(1, $start->diffInSeconds($end));
         $remaining = max(0, now()->diffInSeconds($end, false));
 
-        $amount = (float) $subscription->plan->price_per_seat * $extraSeats * ($remaining / $total);
+        $amount = (float) $subscription->seatPrice() * $extraSeats * ($remaining / $total);
 
         return number_format(max($amount, 0.01), 2, '.', '');
     }
@@ -278,11 +346,22 @@ class BillingService
         $seats = (int) $payment->payload['seats'];
         $subscription = Subscription::withoutGlobalScopes()->firstOrNew(['workspace_id' => $payment->workspace_id]);
 
-        $attributes = ['plan_id' => $plan->id, 'seats' => $seats, 'status' => SubscriptionStatus::Active, 'renewal_attempts' => 0, 'next_retry_at' => null];
+        $interval = $payment->payload['interval'] ?? $subscription->interval ?? 'month';
+
+        $attributes = ['plan_id' => $plan->id, 'seats' => $seats, 'interval' => $interval, 'status' => SubscriptionStatus::Active, 'renewal_attempts' => 0, 'next_retry_at' => null];
 
         switch ($payment->type) {
             case PaymentType::Initial:
-                $attributes += ['current_period_start' => now(), 'current_period_end' => $this->periodEnd(now(), $plan), 'pending_seats' => null, 'cancel_at_period_end' => false];
+                $attributes += [
+                    'current_period_start' => now(),
+                    'current_period_end' => $this->periodEnd(now(), $interval),
+                    'pending_seats' => null,
+                    'cancel_at_period_end' => false,
+                    // Bought with money from now on, even if it was given for free before.
+                    'is_complimentary' => false,
+                    'granted_by' => null,
+                    'granted_at' => null,
+                ];
                 if ($subscription->exists) {
                     // New plan, new period: a pending renewal invoice for the old one no longer applies.
                     $this->invoices->voidOpen($subscription);
@@ -290,7 +369,7 @@ class BillingService
                 break;
             case PaymentType::Renewal:
                 $start = $subscription->current_period_end && $subscription->current_period_end->isFuture() ? $subscription->current_period_end : now();
-                $attributes += ['current_period_start' => $start, 'current_period_end' => $this->periodEnd($start, $plan), 'pending_seats' => null];
+                $attributes += ['current_period_start' => $start, 'current_period_end' => $this->periodEnd($start, $interval), 'pending_seats' => null];
                 break;
             case PaymentType::SeatUpgrade:
                 $attributes += ['pending_seats' => null];
@@ -351,9 +430,9 @@ class BillingService
         }
     }
 
-    private function periodEnd(CarbonInterface $start, Plan $plan): CarbonInterface
+    private function periodEnd(CarbonInterface $start, string $interval): CarbonInterface
     {
-        return $plan->interval === 'year' ? $start->copy()->addYear() : $start->copy()->addMonth();
+        return $interval === 'year' ? $start->copy()->addYear() : $start->copy()->addMonth();
     }
 
     private function returnUrl(string $base, Payment $payment): string

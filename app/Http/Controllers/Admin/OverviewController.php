@@ -19,8 +19,8 @@ class OverviewController extends Controller
 {
     public function __invoke(): JsonResponse
     {
-        $paying = Subscription::with('plan')->where('status', SubscriptionStatus::Active)->get();
-        $mrr = $paying->sum(fn (Subscription $s) => (float) $s->plan->price_per_seat * $s->seats / ($s->plan->interval === 'year' ? 12 : 1));
+        $paying = Subscription::with('plan')->where('status', SubscriptionStatus::Active)->where('is_complimentary', false)->get();
+        $mrr = $paying->sum(fn (Subscription $s) => (float) $s->seatPrice() * $s->seats / ($s->interval === 'year' ? 12 : 1));
         $since = now()->subDays(30);
 
         return response()->json([

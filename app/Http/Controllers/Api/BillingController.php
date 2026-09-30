@@ -16,6 +16,7 @@ use App\Services\Billing\PlanLimits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\Rule;
 
 class BillingController extends Controller
 {
@@ -65,11 +66,13 @@ class BillingController extends Controller
         $data = $request->validate([
             'plan_id' => ['required', 'integer'],
             'seats' => ['required', 'integer', 'min:1', 'max:1000'],
+            'interval' => ['sometimes', Rule::in(['month', 'year'])],
         ]);
         $plan = Plan::where('is_active', true)->where('is_trial_plan', false)->findOrFail($data['plan_id']);
+        $interval = $data['interval'] ?? 'month';
 
-        $url = $this->billing->checkout($request->attributes->get('workspace'), $plan, $data['seats'], route('billing.return'));
-        AuditLog::record('billing.checkout', $plan, ['seats' => $data['seats']]);
+        $url = $this->billing->checkout($request->attributes->get('workspace'), $plan, $data['seats'], $interval, route('billing.return'));
+        AuditLog::record('billing.checkout', $plan, ['seats' => $data['seats'], 'interval' => $interval]);
 
         return response()->json(['redirect_url' => $url]);
     }

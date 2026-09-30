@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['workspace_id', 'plan_id', 'seats', 'pending_seats', 'status', 'current_period_start', 'current_period_end', 'cancel_at_period_end', 'renewal_attempts', 'next_retry_at', 'payment_method_id'])]
+#[Fillable(['workspace_id', 'plan_id', 'seats', 'interval', 'pending_seats', 'status', 'is_complimentary', 'granted_by', 'granted_at', 'current_period_start', 'current_period_end', 'cancel_at_period_end', 'renewal_attempts', 'next_retry_at', 'payment_method_id'])]
 class Subscription extends Model
 {
     use BelongsToWorkspace;
@@ -20,7 +20,9 @@ class Subscription extends Model
             'current_period_start' => 'datetime',
             'current_period_end' => 'datetime',
             'next_retry_at' => 'datetime',
+            'granted_at' => 'datetime',
             'cancel_at_period_end' => 'boolean',
+            'is_complimentary' => 'boolean',
         ];
     }
 
@@ -29,9 +31,20 @@ class Subscription extends Model
         return $this->belongsTo(Plan::class);
     }
 
+    /** Superadmin who gave this subscription without payment. */
+    public function grantedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'granted_by');
+    }
+
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function seatPrice(): string
+    {
+        return $this->plan->seatPrice($this->interval);
     }
 
     public function isUsable(): bool

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\PaymentStatus;
+use App\Enums\PaymentType;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Payment;
@@ -27,7 +28,7 @@ class PaymentController extends Controller
 
     public function refund(Payment $payment, BillingService $billing): JsonResponse
     {
-        if ($payment->status !== PaymentStatus::Paid) {
+        if ($payment->status !== PaymentStatus::Paid || $payment->type === PaymentType::Grant) {
             abort(422, 'Only paid payments can be refunded.');
         }
 

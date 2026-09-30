@@ -16,6 +16,7 @@ return [
     'seats_below_members' => 'Yer sayı mövcud üzv sayından (:members) az ola bilməz.',
     'workspace_suspended' => 'Bu hesab dayandırılıb. Dəstək ilə əlaqə saxlayın.',
     'invoice_line' => ['month' => ':plan paketi — aylıq abunə', 'year' => ':plan paketi — illik abunə', 'prorated' => ':plan paketi — əlavə yerlər (dövrün qalan günləri)'],
+    'interval_unavailable' => 'Bu paket illik ödənişlə satılmır.',
     'invoice_not_payable' => 'Bu faktura artıq ödənilib və ya ləğv edilib.',
     'sla_not_in_plan' => 'Cavab müddəti SLA-sı planınıza daxil deyil.',
 ];

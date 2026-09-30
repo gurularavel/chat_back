@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\Plan;
 use App\Models\Subscription;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Services\Billing\Gateways\FakeGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -125,6 +126,105 @@ class BillingTest extends TestCase
         $this->artisan('billing:renew');
 
         $this->assertSame(SubscriptionStatus::Expired, $this->subscription($workspace)->status);
+    }
+
+    public function test_yearly_checkout_charges_the_yearly_price_for_a_year(): void
+    {
+        $workspace = $this->createWorkspace();
+        $plan = Plan::where('code', 'business')->first();
+
+        $this->actingInWorkspace($workspace->owner, $workspace)
+            ->postJson('/api/billing/checkout', ['plan_id' => $plan->id, 'seats' => 3, 'interval' => 'year'])
+            ->assertOk();
+
+        $payment = Payment::withoutGlobalScopes()->firstOrFail();
+        $this->assertSame('870.00', $payment->amount);
+        FakeGateway::complete($payment->gateway_order_id, paid: true);
+        $this->get('/billing/return?payment='.$payment->id);
+
+        $subscription = $this->subscription($workspace);
+        $this->assertSame('year', $subscription->interval);
+        $this->assertTrue($subscription->current_period_end->between(now()->addYear()->subMinute(), now()->addYear()->addMinute()));
+        $this->assertSame('year', Invoice::withoutGlobalScopes()->value('lines')[0]['kind']);
+
+        // Renewal charges the yearly price again.
+        $subscription->update(['current_period_end' => now()->subMinute()]);
+        $this->artisan('billing:renew');
+        $this->assertSame('870.00', Payment::withoutGlobalScopes()->where('type', 'renewal')->value('amount'));
+    }
+
+    public function test_plan_without_yearly_price_cannot_be_bought_yearly(): void
+    {
+        $workspace = $this->createWorkspace();
+        $plan = Plan::where('code', 'starter')->first();
+        $plan->update(['yearly_price_per_seat' => null]);
+
+        $this->actingInWorkspace($workspace->owner, $workspace)
+            ->postJson('/api/billing/checkout', ['plan_id' => $plan->id, 'seats' => 1, 'interval' => 'year'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('interval');
+    }
+
+    public function test_superadmin_grants_a_plan_without_payment(): void
+    {
+        $workspace = $this->createWorkspace();
+        $plan = Plan::where('code', 'business')->first();
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_superadmin' => true])->save();
+
+        $this->actingInWorkspace($workspace->owner, $workspace)
+            ->postJson("/api/admin/workspaces/{$workspace->id}/grant", ['plan_id' => $plan->id, 'seats' => 5, 'interval' => 'year', 'periods' => 1])
+            ->assertForbidden();
+
+        $this->actingAs($admin)
+            ->postJson("/api/admin/workspaces/{$workspace->id}/grant", ['plan_id' => $plan->id, 'seats' => 5, 'interval' => 'year', 'periods' => 1])
+            ->assertOk()
+            ->assertJsonPath('subscription.is_complimentary', true)
+            ->assertJsonPath('subscription.granted_by.id', $admin->id);
+
+        $subscription = $this->subscription($workspace);
+        $this->assertSame(SubscriptionStatus::Active, $subscription->status);
+        $this->assertSame(5, $subscription->seats);
+        $this->assertTrue($subscription->current_period_end->between(now()->addYear()->subMinute(), now()->addYear()->addMinute()));
+
+        $payment = Payment::withoutGlobalScopes()->firstOrFail();
+        $this->assertSame('grant', $payment->type->value);
+        $this->assertSame('0.00', $payment->amount);
+        $this->actingAs($admin)->postJson("/api/admin/payments/{$payment->id}/refund")->assertUnprocessable();
+
+        $this->actingAs($admin)->getJson('/api/admin/workspaces')->assertJsonPath('data.0.subscription.is_complimentary', true);
+        $this->actingAs($admin)->getJson('/api/admin/overview')->assertJsonPath('mrr', 0);
+    }
+
+    public function test_granted_plan_expires_without_charging_or_invoicing(): void
+    {
+        $workspace = $this->paidWorkspace(seats: 2);
+        $this->subscription($workspace)->update(['is_complimentary' => true, 'current_period_end' => now()->addDays(3)]);
+
+        $this->artisan('billing:remind');
+        $this->assertSame(0, Invoice::withoutGlobalScopes()->count());
+
+        $this->subscription($workspace)->update(['current_period_end' => now()->subMinute()]);
+        $this->artisan('billing:renew');
+
+        $this->assertSame(SubscriptionStatus::Expired, $this->subscription($workspace)->status);
+        $this->assertSame(0, Payment::withoutGlobalScopes()->count());
+    }
+
+    public function test_buying_a_plan_ends_the_complimentary_flag(): void
+    {
+        $workspace = $this->createWorkspace();
+        $this->subscription($workspace)->update(['is_complimentary' => true, 'status' => SubscriptionStatus::Active]);
+        $plan = Plan::where('code', 'starter')->first();
+
+        $this->actingInWorkspace($workspace->owner, $workspace)->postJson('/api/billing/checkout', ['plan_id' => $plan->id, 'seats' => 1]);
+        $payment = Payment::withoutGlobalScopes()->firstOrFail();
+        FakeGateway::complete($payment->gateway_order_id, paid: true);
+        $this->get('/billing/return?payment='.$payment->id);
+
+        $subscription = $this->subscription($workspace);
+        $this->assertFalse($subscription->is_complimentary);
+        $this->assertSame('month', $subscription->interval);
     }
 
     private function paidWorkspace(int $seats, int $periodStartedDaysAgo = 0): Workspace

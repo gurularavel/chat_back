@@ -10,8 +10,10 @@ use App\Http\Resources\SubscriptionResource;
 use App\Models\AiCredential;
 use App\Models\AuditLog;
 use App\Models\Conversation;
+use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Workspace;
+use App\Services\Billing\BillingService;
 use App\Services\Billing\PlanLimits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +52,8 @@ class WorkspaceController extends Controller
                 'status' => $w->subscription->status->value,
                 'plan' => $w->subscription->plan->code,
                 'seats' => $w->subscription->seats,
+                'interval' => $w->subscription->interval,
+                'is_complimentary' => $w->subscription->is_complimentary,
                 'current_period_end' => $w->subscription->current_period_end?->toIso8601String(),
             ] : null,
             'created_at' => $w->created_at->toIso8601String(),
@@ -61,7 +65,7 @@ class WorkspaceController extends Controller
         return response()->json([
             'workspace' => $workspace->load('owner:id,name,email'),
             'members' => MemberResource::collection($workspace->members()->get()),
-            'subscription' => ($s = $limits->subscription($workspace)) ? new SubscriptionResource($s->load(['plan', 'paymentMethod'])) : null,
+            'subscription' => ($s = $limits->subscription($workspace)) ? new SubscriptionResource($s->load(['plan', 'paymentMethod', 'grantedBy'])) : null,
             'usage' => $limits->usage($workspace),
             'ai_credentials' => AiCredential::withoutGlobalScopes()->where('workspace_id', $workspace->id)->get(['id', 'provider', 'chat_model', 'embedding_model', 'status', 'is_default', 'last_error', 'last_verified_at']),
             'recent_conversations' => ConversationResource::collection(
@@ -86,6 +90,7 @@ class WorkspaceController extends Controller
         $data = $request->validate([
             'plan_id' => ['sometimes', 'exists:plans,id'],
             'seats' => ['sometimes', 'integer', 'min:1', 'max:10000'],
+            'interval' => ['sometimes', Rule::in(['month', 'year'])],
             'status' => ['sometimes', Rule::enum(SubscriptionStatus::class)],
             'current_period_end' => ['sometimes', 'date'],
             'extend_days' => ['sometimes', 'integer', 'min:1', 'max:365'],
@@ -102,7 +107,23 @@ class WorkspaceController extends Controller
         $subscription->update($data);
         AuditLog::record('admin.subscription.updated', $subscription, $request->all(), $workspace->id);
 
-        return response()->json(['subscription' => new SubscriptionResource($subscription->fresh(['plan', 'paymentMethod']))]);
+        return response()->json(['subscription' => new SubscriptionResource($subscription->fresh(['plan', 'paymentMethod', 'grantedBy']))]);
+    }
+
+    /** Give the workspace a plan without payment (partners, promotions, support). */
+    public function grant(Request $request, Workspace $workspace, BillingService $billing): JsonResponse
+    {
+        $data = $request->validate([
+            'plan_id' => ['required', 'exists:plans,id'],
+            'seats' => ['required', 'integer', 'min:1', 'max:10000'],
+            'interval' => ['required', Rule::in(['month', 'year'])],
+            'periods' => ['required', 'integer', 'min:1', 'max:36'],
+        ]);
+
+        $subscription = $billing->grant($workspace, Plan::findOrFail($data['plan_id']), $data['seats'], $data['interval'], $data['periods'], $request->user());
+        AuditLog::record('admin.subscription.granted', $subscription, $data, $workspace->id);
+
+        return response()->json(['subscription' => new SubscriptionResource($subscription->fresh(['plan', 'paymentMethod', 'grantedBy']))]);
     }
 
     /** Superadmin opens the tenant panel (frontend then sends X-Workspace). */

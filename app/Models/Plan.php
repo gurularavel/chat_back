@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['code', 'name', 'description', 'price_per_seat', 'currency', 'interval', 'min_seats', 'max_seats', 'limits', 'features', 'is_active', 'is_trial_plan', 'sort'])]
+#[Fillable(['code', 'name', 'description', 'price_per_seat', 'yearly_price_per_seat', 'currency', 'min_seats', 'max_seats', 'limits', 'features', 'is_active', 'is_trial_plan', 'sort'])]
 class Plan extends Model
 {
     /** Limit keys; null value = unlimited. */
@@ -17,6 +17,7 @@ class Plan extends Model
             'name' => 'array',
             'description' => 'array',
             'price_per_seat' => 'decimal:2',
+            'yearly_price_per_seat' => 'decimal:2',
             'limits' => 'array',
             'features' => 'array',
             'is_active' => 'boolean',
@@ -38,8 +39,20 @@ class Plan extends Model
         return $this->name[$locale] ?? $this->name['en'] ?? $this->code;
     }
 
-    public function priceFor(int $seats): string
+    /** Billing intervals a customer can buy this plan for. */
+    public function intervals(): array
     {
-        return number_format((float) $this->price_per_seat * $seats, 2, '.', '');
+        return $this->yearly_price_per_seat === null ? ['month'] : ['month', 'year'];
+    }
+
+    /** Price of one seat for one billing period. */
+    public function seatPrice(string $interval = 'month'): string
+    {
+        return $interval === 'year' ? $this->yearly_price_per_seat ?? $this->price_per_seat : $this->price_per_seat;
+    }
+
+    public function priceFor(int $seats, string $interval = 'month'): string
+    {
+        return number_format((float) $this->seatPrice($interval) * $seats, 2, '.', '');
     }
 }

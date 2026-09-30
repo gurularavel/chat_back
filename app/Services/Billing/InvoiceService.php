@@ -33,22 +33,23 @@ class InvoiceService
     {
         $subscription->loadMissing(['plan', 'workspace']);
 
-        if ($subscription->status === SubscriptionStatus::Trialing || $subscription->cancel_at_period_end || ! $subscription->current_period_end) {
+        if ($subscription->status === SubscriptionStatus::Trialing || $subscription->is_complimentary || $subscription->cancel_at_period_end || ! $subscription->current_period_end) {
             return null;
         }
 
         $plan = $subscription->plan;
+        $interval = $subscription->interval;
         $seats = $subscription->pending_seats ?? $subscription->seats;
         $start = $subscription->current_period_end;
-        $end = $plan->interval === 'year' ? $start->copy()->addYear() : $start->copy()->addMonth();
+        $end = $interval === 'year' ? $start->copy()->addYear() : $start->copy()->addMonth();
         $attributes = [
             'type' => PaymentType::Renewal,
             'period_start' => $start,
             'period_end' => $end,
             'due_at' => $start,
             'currency' => $plan->currency,
-            'lines' => [$this->line($subscription->workspace, $plan->localizedName($subscription->workspace->locale), $plan->interval, $seats, $plan->price_per_seat, $plan->priceFor($seats), $start, $end)],
-        ] + $this->amounts($plan->priceFor($seats));
+            'lines' => [$this->line($subscription->workspace, $plan->localizedName($subscription->workspace->locale), $interval, $seats, $plan->seatPrice($interval), $plan->priceFor($seats, $interval), $start, $end)],
+        ] + $this->amounts($plan->priceFor($seats, $interval));
 
         $existing = Invoice::withoutGlobalScopes()->open()
             ->where('subscription_id', $subscription->id)
@@ -129,11 +130,11 @@ class InvoiceService
             $extra = max(1, $seats - (int) ($payment->payload['previous_seats'] ?? $seats - 1));
             $start = now();
             $end = $subscription->current_period_end ?? now();
-            $line = $this->line($workspace, $name, 'prorated', $extra, $plan->price_per_seat, $payment->amount, $start, $end);
+            $line = $this->line($workspace, $name, 'prorated', $extra, $plan->seatPrice($subscription->interval), $payment->amount, $start, $end);
         } else {
             $start = $subscription->current_period_start ?? now();
             $end = $subscription->current_period_end ?? now();
-            $line = $this->line($workspace, $name, $plan->interval, $seats, $plan->price_per_seat, $payment->amount, $start, $end);
+            $line = $this->line($workspace, $name, $subscription->interval, $seats, $plan->seatPrice($subscription->interval), $payment->amount, $start, $end);
         }
 
         return [

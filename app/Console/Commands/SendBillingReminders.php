@@ -27,10 +27,11 @@ class SendBillingReminders extends Command
             ->with(['plan', 'workspace'])
             ->where('status', SubscriptionStatus::Active)
             ->where('cancel_at_period_end', false)
+            ->where('is_complimentary', false)
             ->where('current_period_end', '>', now())
             ->where('current_period_end', '<=', now()->addDays(max($leadDays)))
             ->each(function (Subscription $subscription) use ($invoices, $leadDays, &$issued) {
-                $lead = $leadDays[$subscription->plan->interval] ?? $leadDays['month'];
+                $lead = $leadDays[$subscription->interval] ?? $leadDays['month'];
                 if ($subscription->current_period_end->gt(now()->addDays($lead))) {
                     return;
                 }

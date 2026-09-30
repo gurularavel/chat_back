@@ -112,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('workspaces/{workspace}', [Admin\WorkspaceController::class, 'show']);
         Route::patch('workspaces/{workspace}', [Admin\WorkspaceController::class, 'update']);
         Route::patch('workspaces/{workspace}/subscription', [Admin\WorkspaceController::class, 'updateSubscription']);
+        Route::post('workspaces/{workspace}/grant', [Admin\WorkspaceController::class, 'grant']);
         Route::post('workspaces/{workspace}/impersonate', [Admin\WorkspaceController::class, 'impersonate']);
         Route::get('conversations', [Admin\ConversationController::class, 'index']);
         Route::get('conversations/{conversation}', [Admin\ConversationController::class, 'show']);
