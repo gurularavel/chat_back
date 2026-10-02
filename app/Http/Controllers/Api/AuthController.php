@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\NewSignupNotification;
 use App\Services\Workspaces\WorkspaceService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\Registered;
@@ -12,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -37,9 +39,12 @@ class AuthController extends Controller
             'locale' => $data['locale'] ?? app()->getLocale(),
         ]);
 
-        $workspaces->create($user, $data['company'], $user->locale);
+        $workspace = $workspaces->create($user, $data['company'], $user->locale);
 
         event(new Registered($user));
+        if ($to = config('chat.notify_email')) {
+            Notification::route('mail', $to)->notify(new NewSignupNotification($user, $workspace));
+        }
         Auth::guard('web')->login($user);
         if ($request->hasSession()) {
             $request->session()->regenerate();

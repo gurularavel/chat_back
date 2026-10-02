@@ -56,4 +56,20 @@ return [
         'minutes' => ':waiting min',
         'action' => 'Open the chat',
     ],
+    'signup' => [
+        'subject' => 'New sign-up: :workspace',
+        'intro' => 'A new account was registered on the platform.',
+        'name' => 'Name',
+        'email' => 'Email',
+        'workspace' => 'Company',
+        'action' => 'Open in superadmin',
+    ],
+    'contact' => [
+        'subject' => 'New contact request: :name',
+        'intro' => 'Someone filled in the contact form on the website.',
+        'name' => 'Name',
+        'email' => 'Email',
+        'phone' => 'Phone',
+        'action' => 'View requests',
+    ],
 ];

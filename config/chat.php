@@ -4,6 +4,9 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
 
+    // New sign-ups and contact form requests are reported here (empty = no email).
+    'notify_email' => env('NOTIFY_EMAIL', 'support@kvadrat.az'),
+
     'locales' => ['az', 'en', 'ru'],
 
     'trial_days' => (int) env('TRIAL_DAYS', 14),

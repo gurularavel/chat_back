@@ -56,4 +56,20 @@ return [
         'minutes' => ':waiting dəq',
         'action' => 'Söhbəti aç',
     ],
+    'signup' => [
+        'subject' => 'Yeni qeydiyyat: :workspace',
+        'intro' => 'Platformada yeni hesab yaradıldı.',
+        'name' => 'Ad',
+        'email' => 'Email',
+        'workspace' => 'Şirkət',
+        'action' => 'Superadmində aç',
+    ],
+    'contact' => [
+        'subject' => 'Yeni müraciət: :name',
+        'intro' => 'Saytdakı əlaqə formasından yeni müraciət gəldi.',
+        'name' => 'Ad, soyad',
+        'email' => 'Email',
+        'phone' => 'Telefon',
+        'action' => 'Müraciətlərə bax',
+    ],
 ];

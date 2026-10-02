@@ -96,6 +96,10 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('widget-session', fn (Request $request) => Limit::perMinute(20)->by('widget-session:'.$request->ip()));
         RateLimiter::for('auth', fn (Request $request) => Limit::perMinute(10)->by('auth:'.$request->ip()));
+        RateLimiter::for('contact', fn (Request $request) => [
+            Limit::perMinute(3)->by('contact:'.$request->ip()),
+            Limit::perDay(20)->by('contact-day:'.$request->ip()),
+        ]);
     }
 
     private function platformSetting(string $key, mixed $default): mixed

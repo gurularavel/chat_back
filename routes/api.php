@@ -33,6 +33,7 @@ Route::prefix('auth')->middleware('throttle:auth')->group(function () {
 });
 
 Route::get('plans', [Api\BillingController::class, 'plans']);
+Route::post('contact-requests', [Api\ContactRequestController::class, 'store'])->middleware('throttle:contact');
 Route::get('invitations/{token}', [Api\InvitationController::class, 'show']);
 Route::post('invitations/{token}/accept', [Api\InvitationController::class, 'accept']);
 
@@ -130,5 +131,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('settings/logo', [Admin\SettingController::class, 'uploadLogo']);
         Route::delete('settings/logo', [Admin\SettingController::class, 'deleteLogo']);
         Route::get('audit-logs', Admin\AuditLogController::class);
+        Route::apiResource('contact-requests', Admin\ContactRequestController::class)->only(['index', 'update', 'destroy'])
+            ->parameters(['contact-requests' => 'contactRequest']);
     });
 });
